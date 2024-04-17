@@ -8,7 +8,8 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier, BaggingClassifier, AdaBoostClassifier, GradientBoostingClassifier, StackingClassifier
+from xgboost import XGBClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import (
     accuracy_score,
@@ -33,6 +34,10 @@ import os
 import pandas as pd
 from datetime import datetime
 
+#--------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ Class -------------------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+
 
 class ScoreLog:
     def __init__(self, save_score):
@@ -54,7 +59,7 @@ class ScoreLog:
 
 
 class F1ScoreEvaluator:
-    def __init__(self, classifier, classifier_name, X_train, X_test, Y_train, Y_test, param_grid=None, cv=3, scoring='f1', verbose=0):
+    def __init__(self, classifier, classifier_name, X_train, X_test, Y_train, Y_test, param_grid={}, cv=3, scoring='f1', verbose=0):
         self.classifier = classifier
         self.classifier_name = classifier_name
         self.X_train = X_train
@@ -94,6 +99,14 @@ class F1ScoreEvaluator:
         print(f"{self.classifier_name} f1-score on test set : {self.f1_score_test}")
 
 
+
+#--------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ Data Process ------------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+
+
+score_logger = ScoreLog('save_score_challenge.csv')
+
 data = pd.read_csv('conversion_data_train.csv')
 target = 'converted'
 
@@ -111,22 +124,43 @@ preprocessor = ColumnTransformer(
     ]
 )
 
-
-
-######################################### DATA PROCESS ###############################################################
 # X = data.drop(target, axis=1)
 X = data[features_list]
 Y = data[target]
 
-X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=0, stratify=Y)
+# X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=0, stratify=Y)
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.1, random_state=0, stratify=Y)
 X_train = preprocessor.fit_transform(X_train)
 X_test = preprocessor.transform(X_test)
 
 
 
-######################################### LOGISTIC REGRESSION ###############################################################
+#%%
+#--------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ First Basic Model -------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
 
-# Define LogisticRegression
+classifiers = [
+    (LogisticRegression(max_iter=1000), 'LogisticRegression'),
+    (RandomForestClassifier(), 'RandomForestClassifier'),
+    (SVC(), 'SVC'),
+    (AdaBoostClassifier(),'AdaBoostClassifier'),
+    (XGBClassifier(),'XGBRegressorClassifier'),
+    (GradientBoostingClassifier(),'GradientBoostingClassifier')
+]
+
+
+for classifier, classifier_name in classifiers:
+    evaluator = F1ScoreEvaluator(classifier, classifier_name, X_train, X_test, Y_train, Y_test, param_grid={})
+    evaluator.find_best_params() 
+    evaluator.evaluate_train_test()  
+    score_logger.log_score(len_data=len(data), model_name=evaluator.classifier_name, features_list=features_list, f1_score_train=evaluator.f1_score_train, f1_score_test=evaluator.f1_score_test, hyperparameters=evaluator.best_params_)
+
+
+#%%
+#--------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ Logisctic Regression ----------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
 
 params_lr = {
     'penalty': ['l1'],
@@ -140,13 +174,10 @@ params_lr = {
 
 reg_logistic_regression = LogisticRegression()
 
-# Evaluate the LogisticRegression 
 evaluator_lr = F1ScoreEvaluator(reg_logistic_regression, 'LogisticRegression', X_train, X_test, Y_train, Y_test, param_grid=params_lr, cv=5, verbose=2)
 evaluator_lr.find_best_params()
 evaluator_lr.evaluate_train_test()
 
-# Log the scores
-score_logger = ScoreLog('save_score_challenge.csv')
 score_logger.log_score(len_data=len(data), model_name=evaluator_lr.classifier_name, features_list=features_list, f1_score_train=evaluator_lr.f1_score_train, f1_score_test=evaluator_lr.f1_score_test, hyperparameters=evaluator_lr.best_params_)
 
 
@@ -154,39 +185,49 @@ score_logger.log_score(len_data=len(data), model_name=evaluator_lr.classifier_na
 
 #%%
 
-######################################### RANDOM FOREST ###############################################################
-# Define RandomForestClassifier and its hyperparameter grid
+#--------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ Random Forest -----------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+
 params_rf = {
     'max_depth': [10],
     'min_samples_leaf': [10],
     'min_samples_split': [4],
     'n_estimators': [100, 200, 300, 400]
 }
+
+params_rf = {
+    'max_depth': np.arange(5,12),
+    'min_samples_leaf': np.arange(2,6,2),
+    'min_samples_split': np.arange(2,6,2),
+    'n_estimators': [10 , 100]
+}
+
 reg_random_forest = RandomForestClassifier()
 
-# Evaluate the RandomForestClassifier with grid search
 evaluator_rf = F1ScoreEvaluator(reg_random_forest, 'RandomForestClassifier', X_train, X_test, Y_train, Y_test, param_grid=params_rf, cv=5, verbose=2)
 evaluator_rf.find_best_params()
 evaluator_rf.evaluate_train_test()
 
-# Log the scores
 score_logger.log_score(len_data=len(data), model_name=evaluator_rf.classifier_name, features_list=features_list, f1_score_train=evaluator_rf.f1_score_train, f1_score_test=evaluator_rf.f1_score_test, hyperparameters=evaluator_rf.best_params_)
 
+
+
+
+
+
 #%%
-######################################### SVM ###############################################################
+#--------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ SVC ---------------------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+reg_svc = SVC()
 
 # Define parameter grid for SVC
 # params_svc = {
 #     'C': [0.1, 1, 10],
 #     'kernel': ['rbf', 'poly'],
-#     'gamma': ['scale', 'auto']
+    # 'gamma': [0.1, 0.01, 0.001, 'scale', 'auto']
 # }
-
-params_svc = {
-    'C': [0.1, 1, 10],
-    'kernel': ['rbf'],
-    'gamma': [0.1, 0.01, 0.001, 'scale', 'auto']
-}
 
 params_svc = {
     'C': [0.1, 1],
@@ -196,16 +237,214 @@ params_svc = {
 params_svc = {
     'C': [0.1, 1],
 }
-# Initialize SVC classifier
-reg_svc = SVC()
 
-# Evaluate SVC with grid search
 evaluator_svc = F1ScoreEvaluator(reg_svc, 'SVC', X_train, X_test, Y_train, Y_test, param_grid=params_svc, cv=5, verbose=2)
 evaluator_svc.find_best_params()
 evaluator_svc.evaluate_train_test()
 
-# Log the scores
 score_logger.log_score(len_data=len(data), model_name=evaluator_svc.classifier_name, features_list=features_list, f1_score_train=evaluator_svc.f1_score_train, f1_score_test=evaluator_svc.f1_score_test, hyperparameters=evaluator_svc.best_params_)
+
+
+
+#%%
+#--------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ XGBClassifier -----------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+xgboost = XGBClassifier()
+
+# params = {
+#     'max_depth': [4, 6, 10],
+#     'min_child_weight': [ 2, 4, 6],
+#     'n_estimators': [20]
+# }
+
+params = {
+    'max_depth': [6],
+    'min_child_weight': [4],
+    'n_estimators': [15, 20]
+}
+
+evaluator_xgb = F1ScoreEvaluator(xgboost, 'XGBClassifier', X_train, X_test, Y_train, Y_test, param_grid=params, cv=5, verbose=2)
+evaluator_xgb.find_best_params()
+evaluator_xgb.evaluate_train_test()
+
+score_logger.log_score(len_data=len(data), model_name=evaluator_xgb.classifier_name, features_list=features_list, f1_score_train=evaluator_xgb.f1_score_train, f1_score_test=evaluator_xgb.f1_score_test, hyperparameters=evaluator_xgb.best_params_)
+
+
+#%%
+
+
+
+#--------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ AdaBoostClassifier -----------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+
+decision_tree = DecisionTreeClassifier()
+adaboost_dt = AdaBoostClassifier(estimator=decision_tree)
+
+params = {
+    'estimator__max_depth': [4,6,8],
+    'estimator__min_samples_leaf': [2, 4, 8],
+    'estimator__min_samples_split': [12, 16],
+    'n_estimators': [2, 4, 8]
+}
+
+evaluator_ada = F1ScoreEvaluator(adaboost_dt, 'AdaBoostClassifier', X_train, X_test, Y_train, Y_test, param_grid=params, cv=5, verbose=2)
+evaluator_ada.find_best_params()
+evaluator_ada.evaluate_train_test()
+
+score_logger.log_score(len_data=len(data), model_name=evaluator_ada.classifier_name, features_list=features_list, f1_score_train=evaluator_ada.f1_score_train, f1_score_test=evaluator_ada.f1_score_test, hyperparameters=evaluator_ada.best_params_)
+
+
+#%%
+#--------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ GradientBoostingClassifier ----------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+
+
+gradientboost = GradientBoostingClassifier()
+
+# params = {
+#     'max_depth': [8, 10, 12],
+#     'min_samples_leaf': [2, 4],
+#     'min_samples_split': [6, 8, 10],
+#     'n_estimators': [2, 4, 8, 12]
+# }
+
+params = {
+    'max_depth': [8, 12],
+    'min_samples_leaf': [10,14],
+    'min_samples_split': [8],
+    'n_estimators': [48, 64]
+}
+
+evaluator_gb = F1ScoreEvaluator(gradientboost, 'GradientBoostingClassifier', X_train, X_test, Y_train, Y_test, param_grid=params, cv=5, verbose=2)
+evaluator_gb.find_best_params()
+evaluator_gb.evaluate_train_test()
+
+score_logger.log_score(len_data=len(data), model_name=evaluator_gb.classifier_name, features_list=features_list, f1_score_train=evaluator_gb.f1_score_train, f1_score_test=evaluator_gb.f1_score_test, hyperparameters=evaluator_gb.best_params_)
+
+
+#%%
+#--------------------------------------------------------------------------------------------------------------------
+#---------------------------------------- Bagging DecisionTree Classifier -------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+
+
+decision_tree = DecisionTreeClassifier()
+model = BaggingClassifier(estimator=decision_tree)
+# Grid of values to be tested
+params = {
+    "estimator__max_depth": [10],
+    "estimator__min_samples_leaf": [1],
+    "estimator__min_samples_split": [2],
+}
+
+evaluator_gb = F1ScoreEvaluator(gradientboost, 'GradientBoostingClassifier', X_train, X_test, Y_train, Y_test, param_grid=params, cv=5, verbose=2)
+evaluator_gb.find_best_params()
+evaluator_gb.evaluate_train_test()
+
+# Log the scores
+score_logger.log_score(len_data=len(data), model_name=evaluator_gb.classifier_name, features_list=features_list, f1_score_train=evaluator_gb.f1_score_train, f1_score_test=evaluator_gb.f1_score_test, hyperparameters=evaluator_gb.best_params_)
+
+
+
+ #%%
+
+
+# VOTING
+
+# # Logistic regression
+# # Perform grid search
+# print("Grid search...")
+# logreg = LogisticRegression()
+
+# # Grid of values to be tested
+# params = {"C": [0.1, 1.0, 10.0]}
+# logreg_opt = GridSearchCV(
+#     logreg, param_grid=params, cv=3
+# )  # cv : the number of folds to be used for CV
+# logreg_opt.fit(X_train, Y_train)
+# print("...Done.")
+# print("Best hyperparameters : ", logreg_opt.best_params_)
+# print("Best validation accuracy : ", logreg_opt.best_score_)
+# print()
+# print("Accuracy on training set : ", logreg_opt.score(X_train, Y_train))
+# print("Accuracy on test set : ", logreg_opt.score(X_test, Y_test))
+
+
+# # Decision tree
+# # Perform grid search
+# print("Grid search...")
+# dt = DecisionTreeClassifier()
+
+# # Grid of values to be tested
+# params = {
+#     "max_depth": [1, 2, 3],
+#     "min_samples_leaf": [1, 2, 3],
+#     "min_samples_split": [2, 3, 4],
+# }
+# dt_opt = GridSearchCV(
+#     dt, param_grid=params, cv=3
+# )  # cv : the number of folds to be used for CV
+# dt_opt.fit(X_train, Y_train)
+# print("...Done.")
+# print("Best hyperparameters : ", dt_opt.best_params_)
+# print("Best validation accuracy : ", dt_opt.best_score_)
+# print()
+# print("Accuracy on training set : ", dt_opt.score(X_train, Y_train))
+# print("Accuracy on test set : ", dt_opt.score(X_test, Y_test))
+
+
+
+# # SVM
+# # Perform grid search
+# print("Grid search...")
+# svm = SVC(kernel="rbf", probability=True)
+
+# # Grid of values to be tested
+# params = {"C": [0.1, 1.0, 10.0], "gamma": [0.1, 1.0, 10.0]}
+# svm_opt = GridSearchCV(
+#     svm, param_grid=params, cv=3
+# )  # cv : the number of folds to be used for CV
+# svm_opt.fit(X_train, Y_train)
+# print("...Done.")
+# print("Best hyperparameters : ", svm_opt.best_params_)
+# print("Best validation accuracy : ", svm_opt.best_score_)
+# print()
+# print("Accuracy on training set : ", svm_opt.score(X_train, Y_train))
+# print("Accuracy on test set : ", svm_opt.score(X_test, Y_test))
+
+
+# # Voting
+# voting = VotingClassifier(
+#     estimators=[("logistic", logreg_opt), ("tree", dt_opt), ("svm", svm_opt)],
+#     voting="soft",
+# )  # soft: use probabilities for voting
+# voting.fit(X_train, Y_train)
+# print("Accuracy on training set : ", voting.score(X_train, Y_train))
+# print("Accuracy on test set : ", voting.score(X_test, Y_test))
+
+
+# #stacking
+# # Default: LogisticRegression will be used as final estimator
+# print("Training stacking classifier...")
+# stacking = StackingClassifier(
+#     estimators=[("logistic", logreg_opt), ("tree", dt_opt), ("svm", svm_opt)], cv=3
+# )
+# preds = stacking.fit_transform(X_train, Y_train)
+# predictions = pd.DataFrame(preds, columns=stacking.named_estimators_.keys())
+# print("...Done.")
+# display(predictions)
+# print("Accuracy on training set : ", stacking.score(X_train, Y_train))
+# print("Accuracy on test set : ", stacking.score(X_test, Y_test))
+# %%
+
+
+
+
+
+
 
 
 
@@ -221,63 +460,6 @@ print("Best Score:")
 print(best_score_row)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#%%
-# classifiers = [
-#     (LogisticRegression(max_iter=1000), 'LogisticRegression')
-#     (RandomForestClassifier(), 'RandomForestClassifier'),
-#     (SVC(), 'SVC')
-# ]
-
-# for classifier, classifier_name in classifiers:
-#     evaluator = F1ScoreEvaluator(classifier, classifier_name, X_train, X_test, Y_train, Y_test)
-#     f1_score_train, f1_score_test = evaluator.evaluate()
-#     score_logger.log_score(len_data=len(data), model_name=classifier_name, features_list=features_list, f1_score_train=f1_score_train, f1_score_test=f1_score_test, hyperparameters={"": ""})
-
-
-
-
-active = False
-
-if f1_score_best < f1_score_test and active:
-    f1_score_best = f1_score_test
-
-    X = np.append(X_train,X_test,axis=0)
-    Y = np.append(Y_train,Y_test)
-
-    classifier.fit(X,Y)
-    data_without_labels = pd.read_csv('conversion_data_test.csv')
-    X_without_labels = data_without_labels.loc[:, features_list]
-
-    # X_without_labels = X_without_labels.values
-    X_without_labels = preprocessor.transform(X_without_labels)
-
-    data_pred = {
-        'converted': classifier.predict(X_without_labels)
-    }
-
-    Y_predictions = pd.DataFrame(columns=['converted'],data=data_pred)
-    Y_predictions.to_csv('conversion_data_test_predictions_AntoineV-model3.csv', index=False)
-    print('new best classifier',classifier_name,f1_score_best)
 
 
 # %%

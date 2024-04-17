@@ -8,7 +8,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, BaggingClassifier, AdaBoostClassifier, GradientBoostingClassifier, StackingClassifier
+from sklearn.ensemble import RandomForestClassifier, BaggingClassifier, AdaBoostClassifier, GradientBoostingClassifier, StackingClassifier,VotingClassifier
 from xgboost import XGBClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import (
@@ -34,6 +34,7 @@ import os
 import pandas as pd
 from datetime import datetime
 
+#%%
 #--------------------------------------------------------------------------------------------------------------------
 #------------------------------------------------------ Class -------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
@@ -161,6 +162,7 @@ for classifier, classifier_name in classifiers:
 #--------------------------------------------------------------------------------------------------------------------
 #------------------------------------------------------ Logisctic Regression ----------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
+reg_logistic_regression = LogisticRegression()
 
 params_lr = {
     'penalty': ['l1'],
@@ -171,8 +173,6 @@ params_lr = {
 }
 
 # params_lr = {}
-
-reg_logistic_regression = LogisticRegression()
 
 evaluator_lr = F1ScoreEvaluator(reg_logistic_regression, 'LogisticRegression', X_train, X_test, Y_train, Y_test, param_grid=params_lr, cv=5, verbose=2)
 evaluator_lr.find_best_params()
@@ -188,22 +188,21 @@ score_logger.log_score(len_data=len(data), model_name=evaluator_lr.classifier_na
 #--------------------------------------------------------------------------------------------------------------------
 #------------------------------------------------------ Random Forest -----------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
+reg_random_forest = RandomForestClassifier()
 
 params_rf = {
     'max_depth': [10],
     'min_samples_leaf': [10],
     'min_samples_split': [4],
-    'n_estimators': [100, 200, 300, 400]
+    'n_estimators': [100]
 }
 
-params_rf = {
-    'max_depth': np.arange(5,12),
-    'min_samples_leaf': np.arange(2,6,2),
-    'min_samples_split': np.arange(2,6,2),
-    'n_estimators': [10 , 100]
-}
-
-reg_random_forest = RandomForestClassifier()
+# params_rf = {
+#     'max_depth': np.arange(5,12),
+#     'min_samples_leaf': np.arange(2,6,2),
+#     'min_samples_split': np.arange(2,6,2),
+#     'n_estimators': [10 , 100]
+# }
 
 evaluator_rf = F1ScoreEvaluator(reg_random_forest, 'RandomForestClassifier', X_train, X_test, Y_train, Y_test, param_grid=params_rf, cv=5, verbose=2)
 evaluator_rf.find_best_params()
@@ -229,13 +228,14 @@ reg_svc = SVC()
     # 'gamma': [0.1, 0.01, 0.001, 'scale', 'auto']
 # }
 
+# params_svc = {
+#     'C': [0.1, 1],
+#     'kernel': ['rbf'],
+#     'gamma': ['scale', 'auto']
+# }
+
 params_svc = {
-    'C': [0.1, 1],
-    'kernel': ['rbf'],
-    'gamma': ['scale', 'auto']
-}
-params_svc = {
-    'C': [0.1, 1],
+    'C': [1,3],
 }
 
 evaluator_svc = F1ScoreEvaluator(reg_svc, 'SVC', X_train, X_test, Y_train, Y_test, param_grid=params_svc, cv=5, verbose=2)
@@ -326,32 +326,113 @@ score_logger.log_score(len_data=len(data), model_name=evaluator_gb.classifier_na
 
 
 #%%
+#--------------------------------------------------------------------------------------------------------------------#---------------------------------------- VotingClassifier -------------------------------------------
+#-------------------------------------------------- VotingClassifier ----------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
-#---------------------------------------- Bagging DecisionTree Classifier -------------------------------------------
+
+
+voting = VotingClassifier(
+    # estimators=[("logistic", reg_logistic_regression), ("random_forest", reg_random_forest), ("svc", reg_svc)],
+    # estimators=[("logistic", reg_logistic_regression), ("xgboost", xgboost), ("svc", reg_svc)],
+    estimators=[("logistic", reg_logistic_regression), ("xgboost", xgboost), ("random_forest", reg_random_forest)],
+    # estimators=[("logistic", reg_logistic_regression_best), ("xgboost", xgboost_best), ("random_forest", reg_random_forest_best)],
+    voting="soft",
+)
+
+voting.fit(X_train, Y_train)
+
+# y_pred_train = voting.predict(X_train)
+# f1_train = f1_score(Y_test, y_pred_train)
+# print("F1 score on train set:", f1_train)
+
+y_pred_test = voting.predict(X_test)
+f1_test = f1_score(Y_test, y_pred_test)
+
+print("F1 score on test set:", f1_test)
+print(voting)
+
+
+# evaluator_voting = F1ScoreEvaluator(voting, 'voting', X_train, X_test, Y_train, Y_test, param_grid=params, cv=5, verbose=2)
+# evaluator_voting.find_best_params()
+# evaluator_voting.evaluate_train_test()
+# score_logger.log_score(len_data=len(data), model_name='voting', features_list=features_list, f1_score_train=f1_train, f1_score_test=f1_test, hyperparameters={})
+
+
+
+
+
+
+
+
+
+
+
+
+#%%
+#--------------------------------------------------------------------------------------------------------------------#---------------------------------------- VotingClassifier -------------------------------------------
+#-------------------------------------------------- StackingClassifier ----------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
 
 
-decision_tree = DecisionTreeClassifier()
-model = BaggingClassifier(estimator=decision_tree)
-# Grid of values to be tested
-params = {
-    "estimator__max_depth": [10],
-    "estimator__min_samples_leaf": [1],
-    "estimator__min_samples_split": [2],
-}
 
-evaluator_gb = F1ScoreEvaluator(gradientboost, 'GradientBoostingClassifier', X_train, X_test, Y_train, Y_test, param_grid=params, cv=5, verbose=2)
-evaluator_gb.find_best_params()
-evaluator_gb.evaluate_train_test()
-
-# Log the scores
-score_logger.log_score(len_data=len(data), model_name=evaluator_gb.classifier_name, features_list=features_list, f1_score_train=evaluator_gb.f1_score_train, f1_score_test=evaluator_gb.f1_score_test, hyperparameters=evaluator_gb.best_params_)
+reg_logistic_regression_best = LogisticRegression(penalty='l1', C=0.1, solver='saga', max_iter=100)
+xgboost_best = XGBClassifier(n_estimators=20, max_depth=6, min_child_weight=4)
+reg_random_forest_best = RandomForestClassifier(max_depth=10, min_samples_leaf=10, min_samples_split=4, n_estimators=100)
+gradientboost_best = GradientBoostingClassifier(max_depth = 8,min_samples_leaf=10,min_samples_split = 8,n_estimators = 48)
 
 
+stacking = StackingClassifier(
+    # estimators=[("logistic", reg_logistic_regression), ("xgboost", xgboost), ("random_forest", reg_random_forest)],
+    # estimators=[("logistic", reg_logistic_regression_best), ("xgboost", xgboost_best), ("random_forest", reg_random_forest_best)],
+    # estimators=[("logistic", reg_logistic_regression_best), ("gradientboost_best", gradientboost_best), ("random_forest", reg_random_forest_best)],
+    estimators=[("logistic", reg_logistic_regression_best), ("random_forest", reg_random_forest_best)],
+    )
 
- #%%
+preds = stacking.fit_transform(X_train, Y_train)
+predictions = pd.DataFrame(preds, columns=stacking.named_estimators_.keys())
+# display(predictions)
 
 
+stacking.fit(X_train, Y_train)
+
+y_pred_train = stacking.predict(X_train)
+y_pred_test = stacking.predict(X_test)
+
+f1_train = f1_score(Y_train, y_pred_train)
+f1_test = f1_score(Y_test, y_pred_test)
+
+print("F1 score on training set:", f1_train)
+print("F1 score on test set:", f1_test)
+
+
+
+corr_matrix = predictions.corr().round(2)
+import plotly.figure_factory as ff
+
+fig = ff.create_annotated_heatmap(corr_matrix.values, x=corr_matrix.columns.tolist(), y=corr_matrix.index.tolist())
+fig.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#%%
+#%%
 # VOTING
 
 # # Logistic regression

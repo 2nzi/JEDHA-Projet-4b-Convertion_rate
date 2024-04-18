@@ -23,9 +23,7 @@ import warnings
 from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.svm import SVC
 
-warnings.filterwarnings(
-    "ignore", category=DeprecationWarning
-)  # to avoid deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -39,6 +37,7 @@ from datetime import datetime
 #------------------------------------------------------ Class -------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
 
+
 class ScoreLog:
     def __init__(self, save_score):
         self.save_score = save_score
@@ -48,11 +47,11 @@ class ScoreLog:
         if os.path.exists(self.save_score):
             self.df = pd.read_csv(self.save_score)
         else:
-            self.df = pd.DataFrame(columns=["len_data", "model_name", "features_list", "f1_score_train", "f1_score_test", "hyperparameters", "datetime"])
+            self.df = pd.DataFrame(columns=["len_data", "model_name", "features_list", "f1_score_train", "f1_score_test", "hyperparameters", "datetime","test_size_var", "random_state_var"])
 
-    def log_score(self, len_data, model_name, features_list, f1_score_train, f1_score_test, hyperparameters):
+    def log_score(self, len_data, model_name, features_list, f1_score_train, f1_score_test, hyperparameters, test_size_var, random_state_var):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        new_row = {"len_data": len_data, "model_name": model_name, "features_list": features_list, "f1_score_train": f1_score_train, "f1_score_test": f1_score_test, "hyperparameters": hyperparameters, "datetime": now}
+        new_row = {"len_data": len_data, "model_name": model_name, "features_list": features_list, "f1_score_train": f1_score_train, "f1_score_test": f1_score_test, "hyperparameters": hyperparameters, "test_size_var": test_size_var, "random_state_var": random_state_var, "datetime": now}
         self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
         self.save_to_csv()
 
@@ -90,28 +89,23 @@ class F1ScoreEvaluator:
         self.cv_f1_scores = None 
     
     def find_best_params(self):
-        # GridSearchCV to find the best hyperparameters
         gridsearch = GridSearchCV(self.classifier, param_grid=self.param_grid, cv=self.cv, scoring=self.scoring, verbose=self.verbose)
         gridsearch.fit(self.X_train, self.Y_train)
         
-        # Storing the best parameters, best score, and best estimator
         self.best_params_ = gridsearch.best_params_
         self.best_score_ = gridsearch.best_score_
         self.best_estimator_ = gridsearch.best_estimator_
     
     def evaluate_train_test(self):
-        # Calculating the F1 score on the training and test sets
         Y_train_pred = self.best_estimator_.predict(self.X_train)
         Y_test_pred = self.best_estimator_.predict(self.X_test)
         self.f1_score_train = f1_score(self.Y_train, Y_train_pred)
         self.f1_score_test = f1_score(self.Y_test, Y_test_pred)
         
-        # Displaying the F1 scores
         print(f"{self.classifier_name} F1-score on train set: {self.f1_score_train}")
         print(f"{self.classifier_name} F1-score on test set: {self.f1_score_test}")
     
     def cross_validate(self):
-        # Perform cross-validation and compute F1 scores
         cv_scores = cross_val_score(self.best_estimator_, self.X_train, self.Y_train, cv=self.cv, scoring=self.scoring)
         self.cv_f1_scores = cv_scores
         print(f"{self.classifier_name} Cross-validated F1 scores:", cv_scores)
@@ -129,6 +123,7 @@ score_logger = ScoreLog('save_score_challenge.csv')
 #--------------------------------------------------------------------------------------------------------------------
 #------------------------------------------------------ Data Process ------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
+# to improve: faire une pipeline par modele
 
 
 data = pd.read_csv('conversion_data_train.csv')
@@ -180,7 +175,7 @@ for classifier, classifier_name in classifiers:
     evaluator = F1ScoreEvaluator(classifier, classifier_name, X_train, X_test, Y_train, Y_test, param_grid={})
     evaluator.find_best_params() 
     evaluator.evaluate_train_test()  
-    score_logger.log_score(len_data=len(data), model_name=evaluator.classifier_name, features_list=features_list, f1_score_train=evaluator.f1_score_train, f1_score_test=evaluator.f1_score_test, hyperparameters=evaluator.best_params_)
+    score_logger.log_score(len_data=len(data), model_name=evaluator.classifier_name, features_list=features_list, f1_score_train=evaluator.f1_score_train, f1_score_test=evaluator.f1_score_test, hyperparameters=evaluator.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
 
 
 #%%
@@ -201,8 +196,7 @@ params_lr = {
 evaluator_lr = F1ScoreEvaluator(reg_logistic_regression, 'LogisticRegression', X_train, X_test, Y_train, Y_test, param_grid=params_lr, cv=5, verbose=2)
 evaluator_lr.find_best_params()
 evaluator_lr.evaluate_train_test()
-
-score_logger.log_score(len_data=len(data), model_name=evaluator_lr.classifier_name, features_list=features_list, f1_score_train=evaluator_lr.f1_score_train, f1_score_test=evaluator_lr.f1_score_test, hyperparameters=evaluator_lr.best_params_)
+score_logger.log_score(len_data=len(data), model_name=evaluator_lr.classifier_name, features_list=features_list, f1_score_train=evaluator_lr.f1_score_train, f1_score_test=evaluator_lr.f1_score_test, hyperparameters=evaluator_lr.best_params_, test_size_var=test_size_var, random_state_var=random_state_var)
 # evaluator_lr.cross_validate()
 
 
@@ -233,8 +227,7 @@ params_rf = {
 evaluator_rf = F1ScoreEvaluator(reg_random_forest, 'RandomForestClassifier', X_train, X_test, Y_train, Y_test, param_grid=params_rf, cv=5, verbose=2)
 evaluator_rf.find_best_params()
 evaluator_rf.evaluate_train_test()
-
-score_logger.log_score(len_data=len(data), model_name=evaluator_rf.classifier_name, features_list=features_list, f1_score_train=evaluator_rf.f1_score_train, f1_score_test=evaluator_rf.f1_score_test, hyperparameters=evaluator_rf.best_params_)
+score_logger.log_score(len_data=len(data), model_name=evaluator_rf.classifier_name, features_list=features_list, f1_score_train=evaluator_rf.f1_score_train, f1_score_test=evaluator_rf.f1_score_test, hyperparameters=evaluator_rf.best_params_, test_size_var=test_size_var, random_state_var=random_state_var)
 
 
 
@@ -268,7 +261,7 @@ evaluator_svc = F1ScoreEvaluator(reg_svc, 'SVC', X_train, X_test, Y_train, Y_tes
 evaluator_svc.find_best_params()
 evaluator_svc.evaluate_train_test()
 
-score_logger.log_score(len_data=len(data), model_name=evaluator_svc.classifier_name, features_list=features_list, f1_score_train=evaluator_svc.f1_score_train, f1_score_test=evaluator_svc.f1_score_test, hyperparameters=evaluator_svc.best_params_)
+score_logger.log_score(len_data=len(data), model_name=evaluator_svc.classifier_name, features_list=features_list, f1_score_train=evaluator_svc.f1_score_train, f1_score_test=evaluator_svc.f1_score_test, hyperparameters=evaluator_svc.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
 
 
 
@@ -296,7 +289,7 @@ evaluator_xgb = F1ScoreEvaluator(xgboost, 'XGBClassifier', X_train, X_test, Y_tr
 evaluator_xgb.find_best_params()
 evaluator_xgb.evaluate_train_test()
 
-score_logger.log_score(len_data=len(data), model_name=evaluator_xgb.classifier_name, features_list=features_list, f1_score_train=evaluator_xgb.f1_score_train, f1_score_test=evaluator_xgb.f1_score_test, hyperparameters=evaluator_xgb.best_params_)
+score_logger.log_score(len_data=len(data), model_name=evaluator_xgb.classifier_name, features_list=features_list, f1_score_train=evaluator_xgb.f1_score_train, f1_score_test=evaluator_xgb.f1_score_test, hyperparameters=evaluator_xgb.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
 
 
 #%%
@@ -321,7 +314,7 @@ evaluator_ada = F1ScoreEvaluator(adaboost_dt, 'AdaBoostClassifier', X_train, X_t
 evaluator_ada.find_best_params()
 evaluator_ada.evaluate_train_test()
 
-score_logger.log_score(len_data=len(data), model_name=evaluator_ada.classifier_name, features_list=features_list, f1_score_train=evaluator_ada.f1_score_train, f1_score_test=evaluator_ada.f1_score_test, hyperparameters=evaluator_ada.best_params_)
+score_logger.log_score(len_data=len(data), model_name=evaluator_ada.classifier_name, features_list=features_list, f1_score_train=evaluator_ada.f1_score_train, f1_score_test=evaluator_ada.f1_score_test, hyperparameters=evaluator_ada.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
 
 
 #%%
@@ -350,12 +343,12 @@ evaluator_gb = F1ScoreEvaluator(gradientboost, 'GradientBoostingClassifier', X_t
 evaluator_gb.find_best_params()
 evaluator_gb.evaluate_train_test()
 
-score_logger.log_score(len_data=len(data), model_name=evaluator_gb.classifier_name, features_list=features_list, f1_score_train=evaluator_gb.f1_score_train, f1_score_test=evaluator_gb.f1_score_test, hyperparameters=evaluator_gb.best_params_)
+score_logger.log_score(len_data=len(data), model_name=evaluator_gb.classifier_name, features_list=features_list, f1_score_train=evaluator_gb.f1_score_train, f1_score_test=evaluator_gb.f1_score_test, hyperparameters=evaluator_gb.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
 
 
 #%%
-#--------------------------------------------------------------------------------------------------------------------#---------------------------------------- VotingClassifier -------------------------------------------
-#-------------------------------------------------- VotingClassifier ----------------------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+#-------------------------------------------------- VotingClassifier ------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
 
 
@@ -390,8 +383,8 @@ print(voting)
 
 
 #%%
-#--------------------------------------------------------------------------------------------------------------------#---------------------------------------- VotingClassifier -------------------------------------------
-#-------------------------------------------------- StackingClassifier ----------------------------------------------------------
+#-------------------------------------------------------------------------------------------------------------------
+#-------------------------------------------------- StackingClassifier ---------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
 
 from sklearn.neural_network import MLPClassifier
@@ -442,9 +435,9 @@ fig.show()
 
 
 #%%
-#--------------------------------------------------------------------------------------------------------------------#---------------------------------------- VotingClassifier -------------------------------------------
-#-------------------------------------------------- Best Score (by model) ----------------------------------------------------------
-#-----------------------------------------------------------------------------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------------------------------------------
+#-------------------------------------------------- Best Score (by model) ------------------------------------------
+#-------------------------------------------------------------------------------------------------------------------
 
 name = {
     0: 'LogisticRegression',
@@ -460,9 +453,9 @@ print("Best score for Logistic Regression model:", best_score_by_model)
 
 
 #%%
-#--------------------------------------------------------------------------------------------------------------------#---------------------------------------- VotingClassifier -------------------------------------------
-#-------------------------------------------------- Best Score (over all model) ----------------------------------------------------------
-#-----------------------------------------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------------------------------------------------------------------
+#-------------------------------------------------- Best Score (over all model) -----------------------------------
+#------------------------------------------------------------------------------------------------------------------
 
 best_score_row = score_logger.get_best_score()
 print("Best Score:")
@@ -485,57 +478,88 @@ print(best_score_row)
 
 
 
-#%%
-
-
-"""
-Optuna example that optimizes a classifier configuration for Iris dataset using sklearn.
-
-In this example, we optimize a classifier configuration for Iris dataset. Classifiers are from
-scikit-learn. We optimize both the choice of classifier (among SVC and RandomForest) and their
-hyperparameters.
-
-"""
-
-import optuna
-
-import sklearn.datasets
-import sklearn.ensemble
-import sklearn.model_selection
-import sklearn.svm
-
-
-# FYI: Objective functions can take additional arguments
-# (https://optuna.readthedocs.io/en/stable/faq.html#objective-func-additional-args).
-def objective(trial):
-    iris = sklearn.datasets.load_iris()
-    x, y = iris.data, iris.target
-
-    classifier_name = trial.suggest_categorical("classifier", ["SVC", "RandomForest"])
-    if classifier_name == "SVC":
-        svc_c = trial.suggest_float("svc_c", 1e-10, 1e10, log=True)
-        classifier_obj = sklearn.svm.SVC(C=svc_c, gamma="auto")
-    else:
-        rf_max_depth = trial.suggest_int("rf_max_depth", 2, 32, log=True)
-        classifier_obj = sklearn.ensemble.RandomForestClassifier(
-            max_depth=rf_max_depth, n_estimators=10
-        )
-
-    score = sklearn.model_selection.cross_val_score(classifier_obj, x, y, n_jobs=-1, cv=3)
-    accuracy = score.mean()
-    return accuracy
-
-
-if __name__ == "__main__":
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=100)
-    print(study.best_trial)
 
 
 
-#%%
 
-print("metrics training set")
-print(display_metrics(Y_train, Y_train_pred))
-print("metrics test set")
-print(display_metrics(Y_test, Y_test_pred))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# #%%
+
+
+# """
+# Optuna example that optimizes a classifier configuration for Iris dataset using sklearn.
+
+# In this example, we optimize a classifier configuration for Iris dataset. Classifiers are from
+# scikit-learn. We optimize both the choice of classifier (among SVC and RandomForest) and their
+# hyperparameters.
+
+# """
+
+# import optuna
+
+# import sklearn.datasets
+# import sklearn.ensemble
+# import sklearn.model_selection
+# import sklearn.svm
+
+
+# # FYI: Objective functions can take additional arguments
+# # (https://optuna.readthedocs.io/en/stable/faq.html#objective-func-additional-args).
+# def objective(trial):
+#     iris = sklearn.datasets.load_iris()
+#     x, y = iris.data, iris.target
+
+#     classifier_name = trial.suggest_categorical("classifier", ["SVC", "RandomForest"])
+#     if classifier_name == "SVC":
+#         svc_c = trial.suggest_float("svc_c", 1e-10, 1e10, log=True)
+#         classifier_obj = sklearn.svm.SVC(C=svc_c, gamma="auto")
+#     else:
+#         rf_max_depth = trial.suggest_int("rf_max_depth", 2, 32, log=True)
+#         classifier_obj = sklearn.ensemble.RandomForestClassifier(
+#             max_depth=rf_max_depth, n_estimators=10
+#         )
+
+#     score = sklearn.model_selection.cross_val_score(classifier_obj, x, y, n_jobs=-1, cv=3)
+#     accuracy = score.mean()
+#     return accuracy
+
+
+# if __name__ == "__main__":
+#     study = optuna.create_study(direction="maximize")
+#     study.optimize(objective, n_trials=100)
+#     print(study.best_trial)
+
+
+
+# #%%
+
+# print("metrics training set")
+# print(display_metrics(Y_train, Y_train_pred))
+# print("metrics test set")
+# print(display_metrics(Y_test, Y_test_pred))

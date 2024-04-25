@@ -29,7 +29,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 import os
-import pandas as pd
 from datetime import datetime
 
 
@@ -58,7 +57,7 @@ class ScoreLog:
     def save_to_csv(self):
         self.df.to_csv(self.save_score, index=False)
 
-    def get_best_score(self, model_name=None):
+    def get_best_score_test(self, model_name=None):
         if model_name:
             filtered_df = self.df[self.df['model_name'] == model_name]
             if filtered_df.empty:
@@ -66,6 +65,16 @@ class ScoreLog:
             best_score_row = filtered_df.loc[filtered_df['f1_score_test'].idxmax()]
         else:
             best_score_row = self.df.loc[self.df['f1_score_test'].idxmax()]
+        return best_score_row
+
+    def get_best_score_train(self, model_name=None):
+        if model_name:
+            filtered_df = self.df[self.df['model_name'] == model_name]
+            if filtered_df.empty:
+                return None  # Handle case where no scores for the specified model are found
+            best_score_row = filtered_df.loc[filtered_df['f1_score_train'].idxmax()]
+        else:
+            best_score_row = self.df.loc[self.df['f1_score_train'].idxmax()]
         return best_score_row
 
 
@@ -108,8 +117,8 @@ class F1ScoreEvaluator:
     def cross_validate(self):
         cv_scores = cross_val_score(self.best_estimator_, self.X_train, self.Y_train, cv=self.cv, scoring=self.scoring)
         self.cv_f1_scores = cv_scores
-        print(f"{self.classifier_name} Cross-validated F1 scores:", cv_scores)
-        print(f"{self.classifier_name} Mean F1 score:", cv_scores.mean())
+        # print(f"{self.classifier_name} Cross-validated F1 scores:", cv_scores)
+        print(f"\n{self.classifier_name} Cross-validated F1 score: {cv_scores.mean()}\n")
 
 score_logger = ScoreLog('save_score_challenge.csv')
 
@@ -129,7 +138,10 @@ score_logger = ScoreLog('save_score_challenge.csv')
 data = pd.read_csv('conversion_data_train.csv')
 target = 'converted'
 
-categorical_features = ['country', 'source', 'new_user']
+# categorical_features = ['country', 'source', 'new_user']
+# numeric_features = ['age', 'total_pages_visited']
+
+categorical_features = ['new_user']
 numeric_features = ['age', 'total_pages_visited']
 features_list = categorical_features+numeric_features
 
@@ -146,8 +158,11 @@ preprocessor = ColumnTransformer(
 # X = data.drop(target, axis=1)
 X = data[features_list]
 Y = data[target]
-test_size_var=0.01
+# test_size_var=0.1
+test_size_var=0.1
+# test_size_var=0.01
 random_state_var = 42
+# random_state_var = 0
 # X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=0, stratify=Y)
 # X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=test_size_var, random_state=0, stratify=Y)
 X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=test_size_var, random_state=random_state_var, stratify=Y)
@@ -155,19 +170,20 @@ X_train = preprocessor.fit_transform(X_train)
 X_test = preprocessor.transform(X_test)
 
 
-
 #%%
 #--------------------------------------------------------------------------------------------------------------------
 #------------------------------------------------------ First Basic Model -------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
-
+from sklearn.neural_network import MLPClassifier
+classifier = MLPClassifier()
 classifiers = [
     (LogisticRegression(), 'LogisticRegression'),
     (RandomForestClassifier(), 'RandomForestClassifier'),
-    (SVC(), 'SVC'),
+    # (SVC(), 'SVC'),
     (AdaBoostClassifier(),'AdaBoostClassifier'),
     (XGBClassifier(),'XGBRegressorClassifier'),
-    (GradientBoostingClassifier(),'GradientBoostingClassifier')
+    (GradientBoostingClassifier(),'GradientBoostingClassifier'),
+    (MLPClassifier(),'MLPClassifier')
 ]
 
 
@@ -176,12 +192,15 @@ for classifier, classifier_name in classifiers:
     evaluator.find_best_params() 
     evaluator.evaluate_train_test()  
     score_logger.log_score(len_data=len(data), model_name=evaluator.classifier_name, features_list=features_list, f1_score_train=evaluator.f1_score_train, f1_score_test=evaluator.f1_score_test, hyperparameters=evaluator.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
+    evaluator.cross_validate()
+
 
 
 #%%
 #--------------------------------------------------------------------------------------------------------------------
 #------------------------------------------------------ Logisctic Regression ----------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
+
 reg_logistic_regression = LogisticRegression()
 
 params_lr = {
@@ -191,15 +210,21 @@ params_lr = {
     'max_iter': [100],
 }
 
+# params_lr = {
+#     'penalty': ['l1'],
+#     'C': [0.2,0.15,0.1,0.08,0.05],
+#     'solver': ['saga'],
+#     'max_iter': [50,100,200],
+# }
+
+
 # params_lr = {}
 
 evaluator_lr = F1ScoreEvaluator(reg_logistic_regression, 'LogisticRegression', X_train, X_test, Y_train, Y_test, param_grid=params_lr, cv=5, verbose=2)
 evaluator_lr.find_best_params()
 evaluator_lr.evaluate_train_test()
 score_logger.log_score(len_data=len(data), model_name=evaluator_lr.classifier_name, features_list=features_list, f1_score_train=evaluator_lr.f1_score_train, f1_score_test=evaluator_lr.f1_score_test, hyperparameters=evaluator_lr.best_params_, test_size_var=test_size_var, random_state_var=random_state_var)
-# evaluator_lr.cross_validate()
-
-
+evaluator_lr.cross_validate()
 
 
 
@@ -208,13 +233,15 @@ score_logger.log_score(len_data=len(data), model_name=evaluator_lr.classifier_na
 #--------------------------------------------------------------------------------------------------------------------
 #------------------------------------------------------ Random Forest -----------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
+
 reg_random_forest = RandomForestClassifier()
 
 params_rf = {
     'max_depth': [10],
     'min_samples_leaf': [10],
     'min_samples_split': [4],
-    'n_estimators': [100]
+    'n_estimators': [100],
+    # 'random_state':[42]
 }
 
 # params_rf = {
@@ -228,6 +255,7 @@ evaluator_rf = F1ScoreEvaluator(reg_random_forest, 'RandomForestClassifier', X_t
 evaluator_rf.find_best_params()
 evaluator_rf.evaluate_train_test()
 score_logger.log_score(len_data=len(data), model_name=evaluator_rf.classifier_name, features_list=features_list, f1_score_train=evaluator_rf.f1_score_train, f1_score_test=evaluator_rf.f1_score_test, hyperparameters=evaluator_rf.best_params_, test_size_var=test_size_var, random_state_var=random_state_var)
+evaluator_rf.cross_validate()
 
 
 
@@ -238,9 +266,17 @@ score_logger.log_score(len_data=len(data), model_name=evaluator_rf.classifier_na
 #--------------------------------------------------------------------------------------------------------------------
 #------------------------------------------------------ SVC ---------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
+
 reg_svc = SVC()
 
-# Define parameter grid for SVC
+# TODO
+# svc_param_grid = {"kernel":["linear","rbf"],
+#                 "C":[10.0**i for i in np.arange(-5,3,1)]}
+
+# svc_grid = GridSearchCV(svc, param_grid=svc_param_grid, cv = 5, return_train_score=True)
+
+
+
 # params_svc = {
 #     'C': [0.1, 1, 10],
 #     'kernel': ['rbf', 'poly'],
@@ -262,6 +298,7 @@ evaluator_svc.find_best_params()
 evaluator_svc.evaluate_train_test()
 
 score_logger.log_score(len_data=len(data), model_name=evaluator_svc.classifier_name, features_list=features_list, f1_score_train=evaluator_svc.f1_score_train, f1_score_test=evaluator_svc.f1_score_test, hyperparameters=evaluator_svc.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
+# evaluator_svc.cross_validate()
 
 
 
@@ -277,19 +314,34 @@ xgboost = XGBClassifier()
 #     'n_estimators': [20]
 # }
 
+# params = {
+#     'max_depth': [6],
+#     'min_child_weight': [4],
+#     'n_estimators': [20]
+# }
+
+# params = {
+#     'max_depth': [4],
+#     'min_child_weight': [7],
+#     'n_estimators': [45]
+# }
+
 params = {
-    'max_depth': [6],
-    'min_child_weight': [4],
-    'n_estimators': [15, 20,32]
+    'min_child_weight': [1,4],
+    'gamma': [0.1,0.5,1,1.5,3],
+    'subsample': np.linspace(0.5, 0.7, 3),
+    'colsample_bytree': np.linspace(0.5, 0.7, 3),
+    'max_depth': [4,5,6],
+    'learning_rate':[0.1,0.2,0.3]
 }
 
 
-
-evaluator_xgb = F1ScoreEvaluator(xgboost, 'XGBClassifier', X_train, X_test, Y_train, Y_test, param_grid=params, cv=5, verbose=2)
+evaluator_xgb = F1ScoreEvaluator(xgboost, 'XGBClassifier', X_train, X_test, Y_train, Y_test, param_grid=params,scoring = 'f1', cv=5, verbose=10)
 evaluator_xgb.find_best_params()
 evaluator_xgb.evaluate_train_test()
 
 score_logger.log_score(len_data=len(data), model_name=evaluator_xgb.classifier_name, features_list=features_list, f1_score_train=evaluator_xgb.f1_score_train, f1_score_test=evaluator_xgb.f1_score_test, hyperparameters=evaluator_xgb.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
+evaluator_xgb.cross_validate()
 
 
 #%%
@@ -315,6 +367,7 @@ evaluator_ada.find_best_params()
 evaluator_ada.evaluate_train_test()
 
 score_logger.log_score(len_data=len(data), model_name=evaluator_ada.classifier_name, features_list=features_list, f1_score_train=evaluator_ada.f1_score_train, f1_score_test=evaluator_ada.f1_score_test, hyperparameters=evaluator_ada.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
+evaluator_ada.cross_validate()
 
 
 #%%
@@ -324,19 +377,29 @@ score_logger.log_score(len_data=len(data), model_name=evaluator_ada.classifier_n
 
 
 gradientboost = GradientBoostingClassifier()
+#  max_depth=8, min_samples_leaf=10, min_samples_split=8, n_estimators=48; total time=  10.0s
+# GradientBoostingClassifier F1-score on train set: 0.7777440320719189
+# GradientBoostingClassifier F1-score on test set: 0.8275862068965517
 
 # params = {
-#     'max_depth': [8, 10, 12],
-#     'min_samples_leaf': [2, 4],
-#     'min_samples_split': [6, 8, 10],
-#     'n_estimators': [2, 4, 8, 12]
+#     'max_depth': [8, 12],
+#     'min_samples_leaf': [10,14],
+#     'min_samples_split': [8],
+#     'n_estimators': [48, 64]
 # }
 
+
+# params = {
+#     'max_depth': [8],
+#     'min_samples_leaf': [10],
+#     'min_samples_split': [8],
+#     'n_estimators': [44,48,54]
+# }
 params = {
-    'max_depth': [8, 12],
-    'min_samples_leaf': [10,14],
+    'max_depth': [8],
+    'min_samples_leaf': [10],
     'min_samples_split': [8],
-    'n_estimators': [48, 64]
+    'n_estimators': [48]
 }
 
 evaluator_gb = F1ScoreEvaluator(gradientboost, 'GradientBoostingClassifier', X_train, X_test, Y_train, Y_test, param_grid=params, cv=5, verbose=2)
@@ -344,6 +407,12 @@ evaluator_gb.find_best_params()
 evaluator_gb.evaluate_train_test()
 
 score_logger.log_score(len_data=len(data), model_name=evaluator_gb.classifier_name, features_list=features_list, f1_score_train=evaluator_gb.f1_score_train, f1_score_test=evaluator_gb.f1_score_test, hyperparameters=evaluator_gb.best_params_,test_size_var=test_size_var, random_state_var=random_state_var)
+evaluator_gb.cross_validate()
+
+
+
+
+
 
 
 #%%
@@ -351,13 +420,21 @@ score_logger.log_score(len_data=len(data), model_name=evaluator_gb.classifier_na
 #-------------------------------------------------- VotingClassifier ------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------
 
+reg_logistic_regression_best = LogisticRegression(penalty='l1', C=0.1, solver='saga', max_iter=100)
+xgboost_best = XGBClassifier(n_estimators=45, max_depth=4, min_child_weight=7)
+reg_random_forest_best = RandomForestClassifier(max_depth=10, min_samples_leaf=10, min_samples_split=4, n_estimators=100)
+gradientboost_best = GradientBoostingClassifier(max_depth = 8,min_samples_leaf=10,min_samples_split = 8,n_estimators = 48)
+adaboost_dt_best = AdaBoostClassifier(estimator=DecisionTreeClassifier(max_depth=6, min_samples_leaf=4, min_samples_split=12),n_estimators=2)
+reg_svc_best = SVC()
 
 voting = VotingClassifier(
     # estimators=[("logistic", reg_logistic_regression), ("random_forest", reg_random_forest), ("svc", reg_svc)],
     # estimators=[("logistic", reg_logistic_regression), ("xgboost", xgboost), ("svc", reg_svc)],
-    estimators=[("logistic", reg_logistic_regression), ("xgboost", xgboost), ("random_forest", reg_random_forest)],
+    # estimators=[("logistic", reg_logistic_regression), ("xgboost", xgboost), ("random_forest", reg_random_forest)],
     # estimators=[("logistic", reg_logistic_regression_best), ("xgboost", xgboost_best), ("random_forest", reg_random_forest_best)],
-    voting="soft",
+    estimators=[("logistic", reg_logistic_regression_best), ("gradientboost_best", gradientboost_best), ("random_forest", reg_random_forest_best)],    
+    voting="hard",
+    # voting="soft",
 )
 
 voting.fit(X_train, Y_train)
@@ -372,11 +449,15 @@ f1_test = f1_score(Y_test, y_pred_test)
 print("F1 score on test set:", f1_test)
 print(voting)
 
+cv_scores = np.mean(cross_val_score(voting, X_train, Y_train, cv=3, scoring='f1'))
+print(np.mean(cv_scores))
 
 # evaluator_voting = F1ScoreEvaluator(voting, 'voting', X_train, X_test, Y_train, Y_test, param_grid=params, cv=5, verbose=2)
 # evaluator_voting.find_best_params()
 # evaluator_voting.evaluate_train_test()
 # score_logger.log_score(len_data=len(data), model_name='voting', features_list=features_list, f1_score_train=f1_train, f1_score_test=f1_test, hyperparameters={})
+
+
 
 
 
@@ -402,9 +483,10 @@ stacking = StackingClassifier(
     # estimators=[("logistic", reg_logistic_regression), ("xgboost", xgboost), ("random_forest", reg_random_forest)],
     # estimators=[("logistic", reg_logistic_regression_best), ("xgboost", xgboost_best), ("random_forest", reg_random_forest_best)],
     # estimators=[("logistic", reg_logistic_regression_best), ("gradientboost_best", gradientboost_best), ("random_forest", reg_random_forest_best)],
+    estimators=[("logistic", reg_logistic_regression_best), ("gradientboost_best", gradientboost_best), ("xgboost_best", xgboost_best)],
     # estimators=[("logistic", reg_logistic_regression_best), ("adaboost_dt_best", adaboost_dt_best), ("random_forest", reg_random_forest_best)],
     # estimators=[("logistic", reg_logistic_regression_best), ("reg_svc_best", reg_svc_best), ("random_forest", reg_random_forest_best)],
-    estimators=[("logistic", reg_logistic_regression_best),  ("random_forest", reg_random_forest_best)],
+    # estimators=[("logistic", reg_logistic_regression_best),  ("random_forest", reg_random_forest_best)],
     )
 
 preds = stacking.fit_transform(X_train, Y_train)
@@ -423,11 +505,86 @@ f1_test = f1_score(Y_test, y_pred_test)
 print("F1 score on training set:", f1_train)
 print("F1 score on test set:", f1_test)
 
+cv_scores = np.mean(cross_val_score(stacking, X_train, Y_train, cv=3, scoring='f1'))
+print(np.mean(cv_scores))
+
 corr_matrix = predictions.corr().round(2)
 import plotly.figure_factory as ff
 
 fig = ff.create_annotated_heatmap(corr_matrix.values, x=corr_matrix.columns.tolist(), y=corr_matrix.index.tolist())
 fig.show()
+
+
+
+
+
+
+
+#%%
+#-------------------------------------------------------------------------------------------------------------------
+#-------------------------------------------------- (Stacking+Voting)Classifier ---------------------------------------------
+#--------------------------------------------------------------------------------------------------------------------
+
+
+reg_logistic_regression_best = LogisticRegression()
+xgboost_best = XGBClassifier()
+reg_random_forest_best = RandomForestClassifier()
+gradientboost_best = GradientBoostingClassifier()
+adaboost_dt_best = AdaBoostClassifier()
+reg_svc_best = SVC()
+mlp= MLPClassifier()
+
+
+voting1 = VotingClassifier(
+    estimators=[("logistic", reg_logistic_regression_best), ("random_forest", reg_random_forest_best)],    
+    voting="soft",
+)
+
+voting2 = VotingClassifier(
+    estimators=[("mlp",  MLPClassifier()), ("xgboost", xgboost)],    
+    voting="soft",
+)
+
+voting3 = VotingClassifier(
+    estimators=[("adaboost_dt_best", adaboost_dt_best), ("gradientboost_best", gradientboost_best)],    
+    voting="soft",
+)
+
+
+stacking = StackingClassifier(
+    estimators=[("voting1", voting1), ("voting2", voting2), ("voting3", voting3)],
+)
+
+preds = stacking.fit_transform(X_train, Y_train)
+predictions = pd.DataFrame(preds, columns=stacking.named_estimators_.keys())
+
+stacking.fit(X_train, Y_train)
+
+y_pred_train = stacking.predict(X_train)
+y_pred_test = stacking.predict(X_test)
+
+f1_train = f1_score(Y_train, y_pred_train)
+f1_test = f1_score(Y_test, y_pred_test)
+
+print("F1 score on training set:", f1_train)
+print("F1 score on test set:", f1_test)
+
+cv_scores = np.mean(cross_val_score(stacking, X_train, Y_train, cv=3, scoring='f1'))
+print('cv_score',np.mean(cv_scores))
+
+corr_matrix = predictions.corr().round(2)
+import plotly.figure_factory as ff
+
+fig = ff.create_annotated_heatmap(corr_matrix.values, x=corr_matrix.columns.tolist(), y=corr_matrix.index.tolist())
+fig.show()
+
+
+
+
+
+
+
+
 
 
 
@@ -447,9 +604,9 @@ name = {
     4: 'XGBRegressorClassifier',
     5: 'GradientBoostingClassifier'
 }
-
-best_score_by_model = score_logger.get_best_score(model_name=name.get(3))
-print("Best score for Logistic Regression model:", best_score_by_model)
+name_nb=5
+best_score_by_model = score_logger.get_best_score(model_name=name_nb)
+print(f"Best score for {name.get(name_nb)} model:", best_score_by_model)
 
 
 #%%
@@ -457,9 +614,9 @@ print("Best score for Logistic Regression model:", best_score_by_model)
 #-------------------------------------------------- Best Score (over all model) -----------------------------------
 #------------------------------------------------------------------------------------------------------------------
 
-best_score_row = score_logger.get_best_score()
+f1_score_best = score_logger.get_best_score_train()
 print("Best Score:")
-print(best_score_row)
+print(f1_score_best)
 
 
 
@@ -470,37 +627,93 @@ print(best_score_row)
 
 
 
+#%%
+#------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ Save a Model -----------------------------------------------
+#------------------------------------------------------------------------------------------------------------------
 
 
+reg_logistic_regression_best = LogisticRegression(penalty='l1', C=0.1, solver='saga', max_iter=100)
+xgboost_best = XGBClassifier(n_estimators=20, max_depth=6, min_child_weight=4)
+reg_random_forest_best = RandomForestClassifier(max_depth=10, min_samples_leaf=10, min_samples_split=4, n_estimators=100)
+gradientboost_best = GradientBoostingClassifier(max_depth = 8,min_samples_leaf=10,min_samples_split = 8,n_estimators = 48)
+adaboost_dt_best = AdaBoostClassifier(estimator=DecisionTreeClassifier(max_depth=6, min_samples_leaf=4, min_samples_split=12),n_estimators=2)
+reg_svc_best = SVC()
+mlp= MLPClassifier(activation='logistic',alpha = 0.0001, hidden_layer_sizes = (45,), max_iter = 500)
 
+model_name = 'mlp'
 
+# hyperparameters = f1_score_best['hyperparameters']
+# classifier = eval(model_name)(**hyperparameters)
 
+classifier = mlp
 
+# active = False
+active = True
 
+if active:
+    X = np.append(X_train,X_test,axis=0)
+    Y = np.append(Y_train,Y_test)
 
+    classifier.fit(X,Y)
+    data_without_labels = pd.read_csv('conversion_data_test.csv')
+    X_without_labels = data_without_labels.loc[:, features_list]
 
+    # X_without_labels = X_without_labels.values
+    X_without_labels = preprocessor.transform(X_without_labels)
 
+    data_pred = {
+        'converted': classifier.predict(X_without_labels)
+    }
 
+    Y_predictions = pd.DataFrame(columns=['converted'],data=data_pred)
+    csv_name = f"conversion_data_test_predictions_AntoineV-model_{model_name}.csv"
+    Y_predictions.to_csv(csv_name, index=False)
 
 
 
 
 
 
+#%%
+#------------------------------------------------------------------------------------------------------------------
+#------------------------------------------------------ Save "Best" Model -----------------------------------------------
+#------------------------------------------------------------------------------------------------------------------
 
+model_name = f1_score_best['model_name']
+hyperparameters = f1_score_best['hyperparameters']
 
+classifier = eval(model_name)(**hyperparameters)
 
+# active = False
+active = True
 
+if active:
+    X = np.append(X_train,X_test,axis=0)
+    Y = np.append(Y_train,Y_test)
 
+    classifier.fit(X,Y)
+    data_without_labels = pd.read_csv('conversion_data_test.csv')
+    X_without_labels = data_without_labels.loc[:, features_list]
 
+    # X_without_labels = X_without_labels.values
+    X_without_labels = preprocessor.transform(X_without_labels)
 
+    data_pred = {
+        'converted': classifier.predict(X_without_labels)
+    }
 
+    Y_predictions = pd.DataFrame(columns=['converted'],data=data_pred)
+    csv_name = f"conversion_data_test_predictions_AntoineV-model_{model_name}_{str(f1_score_best['f1_score_test'])}.csv"
+    Y_predictions.to_csv(csv_name, index=False)
+    print('new best classifier',model_name,f1_score_best)
 
 
 
 
 
 
+#%%
 
 
 
@@ -509,57 +722,86 @@ print(best_score_row)
 
 
 
-# #%%
 
 
-# """
-# Optuna example that optimizes a classifier configuration for Iris dataset using sklearn.
 
-# In this example, we optimize a classifier configuration for Iris dataset. Classifiers are from
-# scikit-learn. We optimize both the choice of classifier (among SVC and RandomForest) and their
-# hyperparameters.
 
-# """
 
-# import optuna
 
-# import sklearn.datasets
-# import sklearn.ensemble
-# import sklearn.model_selection
-# import sklearn.svm
 
 
-# # FYI: Objective functions can take additional arguments
-# # (https://optuna.readthedocs.io/en/stable/faq.html#objective-func-additional-args).
-# def objective(trial):
-#     iris = sklearn.datasets.load_iris()
-#     x, y = iris.data, iris.target
 
-#     classifier_name = trial.suggest_categorical("classifier", ["SVC", "RandomForest"])
-#     if classifier_name == "SVC":
-#         svc_c = trial.suggest_float("svc_c", 1e-10, 1e10, log=True)
-#         classifier_obj = sklearn.svm.SVC(C=svc_c, gamma="auto")
-#     else:
-#         rf_max_depth = trial.suggest_int("rf_max_depth", 2, 32, log=True)
-#         classifier_obj = sklearn.ensemble.RandomForestClassifier(
-#             max_depth=rf_max_depth, n_estimators=10
-#         )
 
-#     score = sklearn.model_selection.cross_val_score(classifier_obj, x, y, n_jobs=-1, cv=3)
-#     accuracy = score.mean()
-#     return accuracy
 
 
-# if __name__ == "__main__":
-#     study = optuna.create_study(direction="maximize")
-#     study.optimize(objective, n_trials=100)
-#     print(study.best_trial)
 
 
 
-# #%%
+#%%
 
-# print("metrics training set")
-# print(display_metrics(Y_train, Y_train_pred))
-# print("metrics test set")
-# print(display_metrics(Y_test, Y_test_pred))
+
+
+
+
+import warnings
+warnings.filterwarnings('ignore')
+import numpy as np
+import pandas as pd
+from datetime import datetime
+from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import StratifiedKFold
+from xgboost import XGBClassifier
+
+
+
+params = {
+        'min_child_weight': [1, 5, 10],
+        'gamma': [0.5, 1, 1.5, 2, 5],
+        'subsample': [0.6, 0.8, 1.0],
+        'colsample_bytree': [0.6, 0.8, 1.0],
+        'max_depth': [3, 4, 5]
+        }
+
+xgb = XGBClassifier(learning_rate=0.02, n_estimators=600, objective='binary:logistic',
+                    silent=True, nthread=1)
+
+folds = 3
+param_comb = 5
+
+skf = StratifiedKFold(n_splits=folds, shuffle = True, random_state = 1001)
+
+random_search = RandomizedSearchCV(xgb, param_distributions=params, n_iter=param_comb, scoring='roc_auc', n_jobs=4, cv=skf.split(X,Y), verbose=3, random_state=1001 )
+
+# Here we go
+random_search.fit(X, Y)
+
+print('\n All results:')
+print(random_search.cv_results_)
+print('\n Best estimator:')
+print(random_search.best_estimator_)
+print('\n Best normalized gini score for %d-fold search with %d parameter combinations:' % (folds, param_comb))
+print(random_search.best_score_ * 2 - 1)
+print('\n Best hyperparameters:')
+print(random_search.best_params_)
+results = pd.DataFrame(random_search.cv_results_)
+results.to_csv('xgb-random-grid-search-results-01.csv', index=False)
+
+
+# grid = GridSearchCV(estimator=xgb, param_grid=params, scoring='roc_auc', n_jobs=4, cv=skf.split(X,Y), verbose=3 )
+# grid.fit(X, Y)
+# print('\n All results:')
+# print(grid.cv_results_)
+# print('\n Best estimator:')
+# print(grid.best_estimator_)
+# print('\n Best score:')
+# print(grid.best_score_ * 2 - 1)
+# print('\n Best parameters:')
+# print(grid.best_params_)
+# results = pd.DataFrame(grid.cv_results_)
+# results.to_csv('xgb-grid-search-results-01.csv', index=False)
+
+# y_test = grid.best_estimator_.predict_proba(test)
+# results_df = pd.DataFrame(data={'id':test_df['id'], 'target':y_test[:,1]})
+# results_df.to_csv('submission-grid-search-xgb-porto-01.csv', index=False)
+# %%

@@ -21,3 +21,12 @@ Les participants travaillent avec deux fichiers : `data_train.csv`, contenant de
 - Modèle entraîné pour la prédiction des conversions.
 - Soumission au tableau de classement.
 - Analyse des paramètres du meilleur modèle avec des recommandations exploitables.
+
+Dans ce projet, l'accent a été mis sur l'analyse approfondie des `données déséquilibrées` (imbalanced data). Cela a nécessité une démarche méthodique pour garantir des résultats fiables et significatifs. L'objectif principal était de développer des modèles de machine learning capables de prédire efficacement une variable cible mal équilibrée.
+
+La première étape a consisté à identifier le déséquilibre des classes dans les données et à comprendre ses implications sur la performance des modèles. Ensuite, plusieurs approches ont été explorées pour traiter ce déséquilibre, en mettant particulièrement l'accent sur l'utilisation du F1-score comme métrique d'évaluation adaptée.
+
+Concernant les résultats, plusieurs modèles ont affiché des performances prometteuses. Notamment, le modèle `XGBoost` et la `régression logistique` ont été particulièrement solides. De plus, les combinaisons de ces modèles dans un cadre de vote ou de stacking ont entraîné une légère amélioration des performances (`voting_xgb_lr` et `stacking_xgb_lr`). Ces combinaisons de modèles ont permis de capitaliser sur les forces individuelles de chaque algorithme, conduisant ainsi à des performances globales plus élevées.
+
+
+En conclusion, ce projet met en lumière l'importance de prendre en compte le déséquilibre des classes lors de la modélisation des données. Les approches et les techniques que nous avons explorées ont permis d'améliorer la performance des modèles et de produire des prédictions plus précises. Cependant, il reste encore des possibilités d'amélioration, notamment en explorant davantage de techniques spécifiques aux données déséquilibrées et en affinant les paramètres des modèles pour obtenir des performances encore meilleures. Des librairies comme `imbalanced-learn` existent et permettent de prendre en charge ces cas d'imbalanced data.

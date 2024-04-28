@@ -1,5 +1,5 @@
 <div style="text-align:left;">
-    <img src="./img.png" alt="DSW LOGO" width="250px" style="margin-left: 0px;"/>
+    <img src="./img/img.png" alt="DSW LOGO" width="250px" style="margin-left: 0px;"/>
 </div>
 
 
